@@ -1,4 +1,4 @@
-### Assignment: importance_sampling
+__### Assignment: importance_sampling
 #### Date: Deadline: Nov 03, 23:59
 #### Points: 2 points
 #### Examples: importance_sampling_examples
