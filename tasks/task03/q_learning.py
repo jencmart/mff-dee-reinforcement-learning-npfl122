@@ -112,7 +112,7 @@ def main(env, args):
     else:
         raise BaseException("Unknown training " + args.training_alg)
 
-    # Final evaluation -- 100 steps
+    # Final evaluation
     print("Evaluation...")
     while True:
         state, done = env.reset(start_evaluation=True), False

@@ -1,0 +1,14 @@
+[[-5.51405584e+01 -5.46602632e+01
+
+<pydevd_plugins.extensions.types.pydevd_plugin_numpy_types.NdArrayItemsContainer object at 0x7f05e7d65c10>
+
+-8.23176634e+00 -5.4705
+
+
+
+8272e+01], [-9.22475339e+01 -7.56927671e+01 -7.62873625e+01 -7.10524625e+01], [-8.03331752e+01 -6.96415049e+01 -6.61826293e+01 -8.84467964e+01], [-8.94145407e+01 -9.18873150e+01 -8.88897394e+01 -9.60
+
+perform_step, lunar_lander.py:91
+reinforce_loop, lunar_lander.py:214
+main, lunar_lander.py:470
+<module>, lunar_lander.py:504
