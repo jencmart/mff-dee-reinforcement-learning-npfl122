@@ -8,7 +8,7 @@ import wrappers
 
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
-parser.add_argument("--recodex", default=False, action="store_true", help="Running in ReCodEx")
+parser.add_argument("--recodex", default=True, action="store_true", help="Running in ReCodEx")
 parser.add_argument("--render_each", default=20, type=int, help="Render some episodes.")
 parser.add_argument("--seed", default=None, type=int, help="Random seed.")
 # For these and any other arguments you add, ReCodEx will keep your default value.
@@ -27,10 +27,13 @@ parser.add_argument("--training_alg", default="TB", type=str, help="Training typ
 # This class is used for the training ... It can do whatever TD you want
 # 1-step n-step on-policy off-policy with/without expectation ... every combination is possible through configuration
 class ReinforceTD:
-    def __init__(self, env, args):
+    def __init__(self, env, args, Q=None, polic=None):
         # Default init ...
         self.env = env
-        self.Q = np.zeros([env.observation_space.n, env.action_space.n])
+        if Q is None:
+            self.Q = np.zeros([env.observation_space.n, env.action_space.n])
+        else:
+            self.Q = Q
         self.C = np.zeros([env.observation_space.n, env.action_space.n])
         self.cnt_states = env.observation_space.n
         self.cnt_actions = env.action_space.n
@@ -51,8 +54,12 @@ class ReinforceTD:
 
         # >>> BEHAVIOR POLICY
         # Start with whatever behavior policy you want (ideally uniform or proportional to s.t. you explore a lot...
-        initial_policy = ["epsilon_greedy", "uniform",  "greedy", "proportional"]
-        self.behavior_policy = initial_policy[3]
+        if polic is None:
+            initial_policy = ["epsilon_greedy", "uniform",  "greedy", "proportional"]
+            self.behavior_policy = initial_policy[3]
+        else:
+            self.behavior_policy = polic
+
         # But after some time, we always switch to decaying e-greedy policy
         self.change_to_decaying_epsilon_greedy_in_episode = 1000
         self.epsilon = args.epsilon
@@ -467,14 +474,24 @@ def load_pi(path="pi.txt"):
     print("Loaded pi with mean 100-episode return {}".format(pi_vals[best_pi_idx]))
     return pis[best_pi_idx]
 
+def load_pi_from_q(path="bestQ.p"):
+    import pickle
+    with open(path, "rb") as f:
+        Q = pickle.load(f)
+        # Q = np.resize(Q, [63000, 4])
+        # print(Q.shp)
+        pi = [np.argmax(Q[s]) for s in range(Q.shape[0])]  # Akce a
+    return pi, Q
+
 
 def main(env, args):
     wwrap = ReinforceTD(env, args)
     if not args.recodex:
         pi = reinforce_loop(wwrap)
     else:
-        pi = load_pi("pi.txt")
-
+        # pi = load_pi("pi.txt")
+        pi, Q = load_pi_from_q("bestQ.p")
+        obj = ReinforceTD(env, args, Q, "greedy")
     # if not args.recodex:
     #     # Fix random seed
     #     np.random.seed(args.seed)
@@ -493,9 +510,13 @@ def main(env, args):
     print("Evaluation...")
     while True:
         state, done = env.reset(start_evaluation=True), False
+        # cca 550 - 650 steps ...
+        i = 0
         while not done:
             render(args.render_each, env)  # pokud 20. epizoda ... tak kazdy step se udela render zde..
+            i+=1
             action = pi[state]
+            # action = obj.select_next_action(state)
             state, reward, done, _ = env.step(action)
 
 
