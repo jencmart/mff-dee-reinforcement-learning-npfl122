@@ -86,7 +86,8 @@ def main(args):
                 monte_carlo_simulation(gamma=args.gamma, env=env, policy=policy, steps=args.mc_length, first_state=s, first_action=a, Q=Q, C=C)
         # >>> IMPROVEMENT <<
         policy = [np.argmax(Q[s]) for s in range(GridWorld.states)]
-    return [Q[s, policy[s]] for s in range(GridWorld.states)], policy
+        v_function = [Q[s, policy[s]] for s in range(GridWorld.states)]
+    return v_function, policy
 
 
 if __name__ == "__main__":
