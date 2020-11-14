@@ -373,7 +373,8 @@ def expected_sarsa(env, args):
             a = epsilon_greedy(args.epsilon, Q[s], env.action_space.n)
             # Perform step
             next_s, r, done, _ = env.step(a)
-            # we can see that for greedy(argmax) policy pi  [what I have here] it is the same as Q learning ...
+            # we can see that for greedy(argmax) policy pi
+            # [what I have here] it is the same as Q learning ...
             E_wrt_pi = Q[next_s, np.argmax(Q[next_s])]
             G = r + args.gamma * E_wrt_pi
             Q[s, a] += args.alpha * (G - Q[s, a])
