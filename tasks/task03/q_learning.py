@@ -61,7 +61,7 @@ def double_q_learning(env, args):
         episode_return = 0
         s, done = env.reset(), False
         while not done:
-            a = epsilon_greedy(epsilon, Q1[s]+Q2[s], env.action_space.n)
+            action = epsilon_greedy(epsilon, Q1[s]+Q2[s], env.action_space.n)
             # Perform step
             next_s, r, done, _ = env.step(a)
             episode_return += r

@@ -9,7 +9,7 @@ import wrappers
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
 parser.add_argument("--recodex", default=True, action="store_true", help="Running in ReCodEx")
-parser.add_argument("--render_each", default=20, type=int, help="Render some episodes.")
+parser.add_argument("--render_each", default=5, type=int, help="Render some episodes.")
 parser.add_argument("--seed", default=None, type=int, help="Random seed.")
 # For these and any other arguments you add, ReCodEx will keep your default value.
 parser.add_argument("--alpha", default=0.2, type=float, help="Learning rate.")  # Can be fixed ; 0.1 is fine ... 0.2 is also fine
