@@ -274,28 +274,6 @@ def create_states_and_targets(memory, network, fixed_network, batch_size, gamma)
     return states, targets
 
 
-def create_states_and_targets_for_mse(memory, network, fixed_network, batch_size, gamma):
-    indices = np.random.choice(np.arange(len(memory)), batch_size, replace=False)
-    targets, states = [], []
-    for i in indices:
-        s, a_idx, reward, done, ns = memory[i]
-
-        prediction = network.predict(np.expand_dims(s, axis=0))[0]
-        prediction = np.copy(prediction)
-        fixed_prediction = fixed_network.predict(np.expand_dims(ns, axis=0))[0]
-        # q_max = np.max(fixed_prediction)
-        q_max = fixed_prediction[np.argmax(prediction)]
-        if done:
-            prediction[a_idx] = reward
-        else:
-            prediction[a_idx] = reward + gamma * q_max  # q(s,a) = r + g * max_a [  q(s_next, a) ]
-        targets.append(prediction)
-        states.append(s)
-
-    states = np.asarray(states)
-    targets = np.array(targets)
-    return states, targets
-
 def main(env, args):
     # Fix random seeds and number of threads
     np.random.seed(args.seed)
@@ -346,7 +324,7 @@ def main(env, args):
 
                 # Train
                 if len(memory) >= args.buffer_init_len:
-                    states, targets = create_states_and_targets(memory, network, fixed_network, args.batch_size)
+                    states, targets = create_states_and_targets(memory, network, fixed_network, args.batch_size, args.gamma)
                     network.train(states, targets)
 
             returns.append(current_return)
