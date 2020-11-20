@@ -166,35 +166,10 @@ class Network:
 
 # return tuple (action_value, action_index)
 def choose_action(q_value, generator, epsilon, args):
-    action_cnt = len(q_value)
-    # print(action_cnt)
     action = np.argmax(q_value)
     if epsilon is not None and generator.uniform() < epsilon:
-        if generator.uniform() < 0.5:
-            action = 0
-        else:
-            action = 1
-        # action = generator.randint(action_cnt)
-
-    # print(action)
+        action = np.random.randint(0, len(ActionSpace.action_space))
     return action, action
-    # acc = args.cnt_steer
-    # if 0 <= action < acc:
-    #     return [np.linspace(-0.9, 0.9, args.cnt_steer)[action], 0, 0], action
-    #
-    # acc += args.cnt_gas
-    # if args.cnt_steer <= action < acc:
-    #     return [0, np.linspace(0.1, 0.9, args.cnt_gas)[action - args.cnt_steer], 0], action
-    #
-    # acc += args.cnt_brake
-    # if args.cnt_gas <= action < acc:
-    #     return [0, 0, np.linspace(0.1, 0.9, args.cnt_brake)[action - args.cnt_steer - args.cnt_gas]], action
-
-    # raise NotImplemented('ah shit, here we go again')
-
-
-def rgb2gray(rgb):
-    return np.expand_dims(np.dot(rgb[..., :3], [0.2989, 0.5870, 0.1140]), axis=2)
 
 
 # returns targets and states
@@ -330,6 +305,7 @@ def main(env, args):
                 memory.append(Transition(state, idx_action, reward, done, next_state))
                 if len(memory) >= args.buffer_init_len:
                     indices = generator.choice(np.arange(len(memory)), args.batch_size, replace=False)
+                    states, targets = create_states_and_targets(memory, args.batch_size)
                     targets, states = [], []
                     for i in indices:
                         s, a, r, d, ns = memory[i]
