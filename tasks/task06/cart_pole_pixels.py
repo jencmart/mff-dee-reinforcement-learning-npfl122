@@ -256,6 +256,45 @@ def priority_sampling(weights, memory, args, nn, fixed_nn, generator):
 #             targets[-1][0] += rho * args.gamma * fixed_predictions[index]
 #     return np.asarray(states), np.asarray(targets)
 
+def create_states_and_targets(memory, network, fixed_network, batch_size, gamma):
+    indices = np.random.choice(np.arange(len(memory)), batch_size, replace=False)
+    targets, states = [], []
+    for i in indices:
+        s, a, r, d, ns = memory[i]
+        if not d:
+            fixed_predictions = fixed_network.predict(np.asarray([ns]))[0]
+            index = np.argmax(network.predict(np.asarray([ns]))[0])
+            tmp = [r + gamma * fixed_predictions[index], a]
+        else:
+            tmp = [r, a]
+        targets.append(tmp)
+        states.append(s)
+    states = np.asarray(states)
+    targets = np.array(targets)
+    return states, targets
+
+
+def create_states_and_targets_for_mse(memory, network, fixed_network, batch_size, gamma):
+    indices = np.random.choice(np.arange(len(memory)), batch_size, replace=False)
+    targets, states = [], []
+    for i in indices:
+        s, a_idx, reward, done, ns = memory[i]
+
+        prediction = network.predict(np.expand_dims(s, axis=0))[0]
+        prediction = np.copy(prediction)
+        fixed_prediction = fixed_network.predict(np.expand_dims(ns, axis=0))[0]
+        # q_max = np.max(fixed_prediction)
+        q_max = fixed_prediction[np.argmax(prediction)]
+        if done:
+            prediction[a_idx] = reward
+        else:
+            prediction[a_idx] = reward + gamma * q_max  # q(s,a) = r + g * max_a [  q(s_next, a) ]
+        targets.append(prediction)
+        states.append(s)
+
+    states = np.asarray(states)
+    targets = np.array(targets)
+    return states, targets
 
 def main(env, args):
     # Fix random seeds and number of threads
@@ -294,32 +333,22 @@ def main(env, args):
             # Perform episode
             state, done = env.reset(), False
             current_return = 0
-
             while not done:
                 # if args.render_each and env.episode and env.episode % args.render_each == 0: env.render()
                 q_values = network.predict(np.array([state], np.float32))[0]
                 action, idx_action = choose_action(q_values, generator, epsilon, args)
+
                 # Perform step
                 next_state, reward, done, _ = env.step(action)
                 current_return += reward
                 memory.append(Transition(state, idx_action, reward, done, next_state))
-                if len(memory) >= args.buffer_init_len:
-                    indices = generator.choice(np.arange(len(memory)), args.batch_size, replace=False)
-                    states, targets = create_states_and_targets(memory, args.batch_size)
-                    targets, states = [], []
-                    for i in indices:
-                        s, a, r, d, ns = memory[i]
-                        if not d:
-                            fixed_predictions = fixed_network.predict(np.asarray([ns]))[0]
-                            index = np.argmax(network.predict(np.asarray([ns]))[0])
-                            tmp = [r + args.gamma * fixed_predictions[index], a]
-                        else:
-                            tmp = [r, a]
-                        targets.append(tmp)
-                        states.append(s)
-                    network.train(np.array(states), np.array(targets))
-
                 state = next_state
+
+                # Train
+                if len(memory) >= args.buffer_init_len:
+                    states, targets = create_states_and_targets(memory, network, fixed_network, args.batch_size)
+                    network.train(states, targets)
+
             returns.append(current_return)
             if episode_step % args.target_update_freq == 0:
                 fixed_network.copy_weights_from(network)

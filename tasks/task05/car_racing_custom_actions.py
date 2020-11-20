@@ -135,8 +135,7 @@ class Network:
     def train(self, states, q_values):
         self._model.optimizer.minimize(
             lambda: self._model.loss(q_values, self._model(states, training=True)),  # q_old, q_new
-            var_list=self._model.trainable_variables
-        )
+            var_list=self._model.trainable_variables)
 
     # Predict method, again with manual @tf.function for efficiency.
     @tf.function
