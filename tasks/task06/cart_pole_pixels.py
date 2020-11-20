@@ -346,7 +346,4 @@ if __name__ == "__main__":
 
     # Create the environment
     env = wrappers.EvaluationWrapper(gym.make("CartPolePixels-v0"), args.seed)
-    # print(env.action_space) # 0,1
-    # print(env.observation_space)
-    # exit(1)
     main(env, args)
