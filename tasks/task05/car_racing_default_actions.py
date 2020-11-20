@@ -16,19 +16,6 @@ import matplotlib.pyplot as plt
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # Report only TF errors by default
 
-class ActionSpace:
-    # 12 akci
-    action_space = [
-        (-1, 1, 0.2), (0, 1, 0.2), (1, 1, 0.2),  # Steer + Full Gas + Brake
-        (-1, 1, 0), (0, 1, 0), (1, 1, 0),        # Steer + Full Gas
-
-        (-1, 0, 0.2), (0, 0, 0.2), (1, 0, 0.2),  # Steer + Brake
-        (-1, 0, 0), (0, 0, 0), (1, 0, 0)         # Steer
-    ]
-
-    def __init__(self):
-        pass
-
 
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
@@ -85,7 +72,7 @@ class MeanValueSquaredError(tf.keras.losses.Loss):
         indices = tf.gather_nd(tf.transpose(y_true), [1])
         full_indices = tf.stack([tf.cast(row_indices, dtype=tf.int32), tf.cast(indices, dtype=tf.int32)], axis=1)
         sparse = tf.SparseTensor(indices=tf.cast(full_indices, dtype=tf.int64), values=res,
-                                 dense_shape=[full_indices.shape[0], len(ActionSpace.action_space)])
+                                 dense_shape=[full_indices.shape[0], 16])
         res = tf.sparse.to_dense(sparse)
 
         # return tf.keras.losses.huber(q_true, values)
@@ -99,7 +86,7 @@ class Network:
         input_size = list(env.observation_space.shape)
         input_size[-1] = args.frame_stack
         reg = None
-        output_size = len(ActionSpace.action_space)  # args.cnt_brake + args.cnt_gas + args.cnt_steer
+        output_size = args.cnt_brake + args.cnt_gas + args.cnt_steer
 
         inp = tf.keras.layers.Input(input_size)
         net = tf.keras.layers.Conv2D(8, (7, 7), activation=tf.nn.relu, strides=3, )(inp)
@@ -126,6 +113,8 @@ class Network:
         output = tf.keras.layers.Dense(output_size, activation=tf.nn.relu, kernel_regularizer=reg)(output)
 
         self._model = tf.keras.Model(inp, output)
+
+    def compile(self):
         self._model.compile(
             optimizer=tf.keras.optimizers.Adam(args.learning_rate),
             loss=MeanValueSquaredError()
@@ -151,13 +140,11 @@ class Network:
 
 # return tuple (action_value, action_index)
 def choose_action(q_value, generator, epsilon, args):
-    action_cnt = len(ActionSpace.action_space)
+    action_cnt = args.cnt_brake + args.cnt_gas + args.cnt_steer
     action_idx = np.argmax(q_value)
 
-    if generator.uniform() < epsilon:
+    if epsilon is not None and generator.uniform() < epsilon:
         action_idx = generator.randint(action_cnt)
-
-    return ActionSpace.action_space[action_idx], action_idx
 
     acc = args.cnt_steer
     if 0 <= action_idx < acc:
@@ -293,7 +280,7 @@ def main(env, args):
             state = create_stacked(state, memory, args)
             while not done:
                 q_values = network.predict(np.array([state], np.float32))[0]
-                action, idx_action = choose_action(q_values, generator, -1, args)
+                action, idx_action = choose_action(q_values, generator, None, args)
                 next_state, reward, done, _ = env.step(action)
                 next_state = create_stacked(rgb2gray(next_state), memory, args)
                 memory.append(Transition(state, idx_action, reward, done, next_state))
@@ -306,6 +293,9 @@ def main(env, args):
         Transition = collections.namedtuple("Transition", ["state", "action", "reward", "done", "next_state"])
         # Construct the network
         network = Network(env, args)
+        network._model = tf.keras.models.load_model("my_model")
+        network.compile()
+
         fixed_network = Network(env, args)
         fixed_network.copy_weights_from(network)
 

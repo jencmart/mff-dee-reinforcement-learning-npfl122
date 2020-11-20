@@ -2,6 +2,8 @@
 import argparse
 import collections
 import os
+import zipfile
+
 import gym
 import numpy as np
 import tensorflow as tf
@@ -136,7 +138,7 @@ class Network:
 def choose_action(q_value, generator, epsilon, args):
     action_cnt = len(q_value)
     action = np.argmax(q_value)
-    if generator.uniform() < epsilon:
+    if epsilon is not None and generator.uniform() < epsilon:
         action = generator.randint(action_cnt)
 
     acc = args.cnt_steer
@@ -249,14 +251,25 @@ def main(env, args):
     generator = np.random.RandomState(args.seed)
 
     if args.recodex:
-        # TODO: Perform evaluation of a trained model.
+        with zipfile.ZipFile("my_model.zip", 'r') as zip_ref:
+            zip_ref.extractall(".")
+
+        Transition = collections.namedtuple("Transition", ["state", "action", "reward", "done", "next_state"])
+        network = Network(env, args)
+        network._model = tf.keras.models.load_model("my_model")
 
         while True:
+            memory = collections.deque(maxlen=20)
             state, done = env.reset(start_evaluation=True), False
+            state = rgb2gray(state)
+            state = create_stacked(state, memory, args)
             while not done:
-                # TODO: Choose an action
-                action = None
-                state, reward, done, _ = env.step(action)
+                q_values = network.predict(np.array([state], np.float32))[0]
+                action, idx_action = choose_action(q_values, generator, None, args)
+                next_state, reward, done, _ = env.step(action)
+                next_state = create_stacked(rgb2gray(next_state), memory, args)
+                memory.append(Transition(state, idx_action, reward, done, next_state))
+                state = next_state
 
     else:
         # Replay memory
