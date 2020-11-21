@@ -23,10 +23,11 @@ parser.add_argument("--gamma", default=0.99, type=float, help="gamma for discoun
 parser.add_argument("--learning_rate", default=0.009, type=float, help="Learning rate.")
 parser.add_argument("--hidden_layer", default=64, type=int, help="Size of hidden layer.")  # originally 238
 parser.add_argument("--hidden_layer_baseline", default=32, type=int, help="Size of hidden layer.")  # originally 220
-parser.add_argument("--learning_rate_baseline", default=0.005, type=float, help="Learning rate.")
+parser.add_argument("--learning_rate_baseline", default=0.003, type=float, help="Learning rate.")
 parser.add_argument("--image_size", default=80, type=int, help="Learning rate.")
 
 parser.add_argument("--finetune", default=False, type=bool, help="Fine-tune?")
+
 
 def get_simple_cnn_GRU(input_shape, output_classes):
     input_shape = [input_shape[0], input_shape[1], 1]
@@ -64,16 +65,13 @@ class BaselineNetwork:
     def compile(self):
         self.model.compile(optimizer=tf.optimizers.Adam(lr=args.learning_rate_baseline), loss='mse')
 
-    def train(self, states, returns):
-        self.model.train_on_batch(x=states, y=returns)
-
     def predict(self, states):
         # states = np.array(states, np.float32)
         results = self.model.predict_on_batch(x=states)
-        if isinstance(results, np.ndarray):
-            pass
-        else:
-            results = results.numpy()
+        # if isinstance(results, np.ndarray):
+        #     pass
+        # else:
+        #     results = results.numpy()
         results = results[:, 0]
         return results
 
@@ -107,43 +105,14 @@ class Network:
         states3 = np.expand_dims(states3, axis=3)
         return [states1, states2, states3]
 
-    def train(self, states, actions, returns):
-        # mnist = 28x28
-        # cifar = 32x32
-        states, actions, returns = np.array(states, np.float32), np.array(actions, np.int32), np.array(returns,
-                                                                                                       np.float32)
-        # Train the model using the states, actions and observed returns by calling `train_on_batch`.
-        # States  [ batch , 4 ]
-        # Actions [ batch , 2 ]
-        # returns [ batch , 1 ]
-
-        states = self.deal_with_states(states)
-
-        onehot_actions = np.zeros((actions.size, 2), dtype=np.int32)
-        onehot_actions[np.arange(actions.size), actions] = 1
-
-        # todo: first train the baseline
-        if self.use_baseline:
-            self.baseline_network.train(states, returns)
-
-        # todo: predict baseline using baseline network
-        if self.use_baseline:
-            baseline = self.baseline_network.predict(states)
-            returns -= baseline
-
-        self.model.train_on_batch(x=states, y=onehot_actions, sample_weight=returns)
-
     def predict(self, states):
-        states = np.array(states, np.float32)
-        states = self.deal_with_states(states)
-
         # Predict distribution over actions for the given input states
         # using the `predict_on_batch` method and calling `.numpy()` on the result to return a NumPy array.
         results = self.model.predict_on_batch(x=states)
-        if isinstance(results, np.ndarray):
-            pass
-        else:
-            results = results.numpy()
+        # if isinstance(results, np.ndarray):
+        #     pass
+        # else:
+        #     results = results.numpy()
         return results
 
 
@@ -162,7 +131,7 @@ def test(arg, environment, net_name, baseline_net_name):
     while True:
         state, done = environment.reset(start_evaluation=True), False
         while not done:
-            probabilities = network.predict([state])[0]
+            probabilities = network.predict(network.deal_with_states(np.array([state], np.float32)))[0]
             action = np.argmax(probabilities)
             state, reward, done, _ = environment.step(action)
 
@@ -206,7 +175,7 @@ def main(env, args):
                     if args.render_each and env.episode > 0 and env.episode % args.render_each == 0:
                         env.render()
 
-                    probabilities = network.predict([state])[0]
+                    probabilities = network.predict(network.deal_with_states(np.array([state], np.float32)))[0]
                     action = np.random.choice(a=possible_actions, p=probabilities)
                     next_state, reward, done, _ = env.step(action)
                     er += reward
@@ -226,7 +195,14 @@ def main(env, args):
             # if avg_returns[-1] >= 500:
             #     break
 
-            network.train(batch_states, batch_actions, batch_returns)
+            states, actions, returns = np.array(batch_states, np.float32), np.array(batch_actions, np.int32), np.array(batch_returns, np.float32)
+            states = network.deal_with_states(states)
+            onehot_actions = np.zeros((actions.size, 2), dtype=np.int32)
+            onehot_actions[np.arange(actions.size), actions] = 1
+
+            network.baseline_network.model.train_on_batch(x=states, y=returns)
+            returns -= network.baseline_network.predict(states)
+            network.model.train_on_batch(x=states, y=onehot_actions, sample_weight=returns)
 
 
 if __name__ == "__main__":
@@ -236,3 +212,4 @@ if __name__ == "__main__":
     env = wrappers.EvaluationWrapper(gym.make("CartPolePixels-v0"), args.seed)
 
     main(env, args)
+
