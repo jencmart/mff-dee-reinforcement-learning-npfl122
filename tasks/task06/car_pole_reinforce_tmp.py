@@ -20,13 +20,13 @@ parser.add_argument("--use_baseline", default=True, type=bool, help="Learning ra
 
 parser.add_argument("--batch_size", default=12, type=int, help="Number of episodes to train on.")
 parser.add_argument("--gamma", default=0.99, type=float, help="gamma for discount.")
-parser.add_argument("--learning_rate", default=0.009, type=float, help="Learning rate.")
+parser.add_argument("--learning_rate", default=0.0003, type=float, help="Learning rate.")
 parser.add_argument("--hidden_layer", default=64, type=int, help="Size of hidden layer.")  # originally 238
 parser.add_argument("--hidden_layer_baseline", default=32, type=int, help="Size of hidden layer.")  # originally 220
-parser.add_argument("--learning_rate_baseline", default=0.003, type=float, help="Learning rate.")
+parser.add_argument("--learning_rate_baseline", default=0.0005, type=float, help="Learning rate.")
 parser.add_argument("--image_size", default=80, type=int, help="Learning rate.")
 
-parser.add_argument("--finetune", default=False, type=bool, help="Fine-tune?")
+parser.add_argument("--finetune", default=True, type=bool, help="Fine-tune?")
 
 
 def get_simple_cnn_GRU(input_shape, output_classes):
@@ -207,9 +207,6 @@ def main(env, args):
 
 if __name__ == "__main__":
     args = parser.parse_args([] if "__file__" not in globals() else None)
-
     # Create the environment
     env = wrappers.EvaluationWrapper(gym.make("CartPolePixels-v0"), args.seed)
-
     main(env, args)
-
