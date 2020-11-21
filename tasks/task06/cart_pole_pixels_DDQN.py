@@ -23,7 +23,7 @@ parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=4, type=int, help="Maximum number of threads to use.")
 
 # For these and any other arguments you add, ReCodEx will keep your default value.
-parser.add_argument("--batch_size", default=128, type=int, help="Frame skip.")
+parser.add_argument("--batch_size", default=64, type=int, help="Frame skip.")
 parser.add_argument("--learning_rate", default=0.005, type=float, help="Frame skip.")
 parser.add_argument("--gamma", default=0.99, type=float, help="Frame skip.")
 
