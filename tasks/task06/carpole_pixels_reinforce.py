@@ -20,8 +20,8 @@ parser.add_argument("--gamma", default=0.99, type=float, help="gamma for discoun
 parser.add_argument("--hidden_layer", default=64, type=int, help="Size of hidden layer.")  # originally 238
 parser.add_argument("--learning_rate", default=0.009, type=float, help="Learning rate.")
 parser.add_argument("--hidden_layer_baseline", default=32, type=int, help="Size of hidden layer.")  # originally 220
-parser.add_argument("--learning_rate_baseline", default=0.003, type=float, help="Learning rate.")
-parser.add_argument("--use_baseline", default=False, type=bool, help="Learning rate.")
+parser.add_argument("--learning_rate_baseline", default=0.005, type=float, help="Learning rate.")
+parser.add_argument("--use_baseline", default=True, type=bool, help="Learning rate.")
 parser.add_argument("--image_size", default=80, type=int, help="Learning rate.")
 
 
@@ -32,10 +32,10 @@ def get_simple_cnn_GRU(input_shape, output_classes):
     in3 = tf.keras.Input(shape=input_shape)
     all_inputs = [in1, in2, in3]
     cnn_outputs = []
-    layers = [tf.keras.layers.Conv2D(4, kernel_size=(2, 2), strides=2, activation='relu', padding='same',
+    layers = [tf.keras.layers.Conv2D(4, kernel_size=(4, 4), strides=2, activation='relu', padding='same',
                                      input_shape=input_shape),
-              tf.keras.layers.Conv2D(8, (2, 2), strides=2, padding='same', activation='relu'),
-              tf.keras.layers.Conv2D(16, (2, 2), strides=2, padding='same', activation='relu'),
+              tf.keras.layers.Conv2D(8, (4, 4), strides=2, padding='same', activation='relu'),
+              tf.keras.layers.Conv2D(16, (4, 4), strides=2, padding='same', activation='relu'),
               tf.keras.layers.Flatten()]
 
     for input in all_inputs:
