@@ -19,13 +19,14 @@ parser.add_argument("--threads", default=4, type=int, help="Maximum number of th
 parser.add_argument("--use_baseline", default=True, type=bool, help="Learning rate.")
 
 parser.add_argument("--batch_size", default=12, type=int, help="Number of episodes to train on.")
-parser.add_argument("--gamma", default=0.983, type=float, help="gamma for discount.")
-parser.add_argument("--learning_rate", default=0.00898, type=float, help="Learning rate.")
+parser.add_argument("--gamma", default=0.99, type=float, help="gamma for discount.")
+parser.add_argument("--learning_rate", default=0.009, type=float, help="Learning rate.")
 parser.add_argument("--hidden_layer", default=64, type=int, help="Size of hidden layer.")  # originally 238
 parser.add_argument("--hidden_layer_baseline", default=32, type=int, help="Size of hidden layer.")  # originally 220
-parser.add_argument("--learning_rate_baseline", default=0.007, type=float, help="Learning rate.")
+parser.add_argument("--learning_rate_baseline", default=0.005, type=float, help="Learning rate.")
 parser.add_argument("--image_size", default=80, type=int, help="Learning rate.")
 
+parser.add_argument("--finetune", default=False, type=bool, help="Fine-tune?")
 
 def get_simple_cnn_GRU(input_shape, output_classes):
     input_shape = [input_shape[0], input_shape[1], 1]
@@ -60,6 +61,9 @@ class BaselineNetwork:
         self.model = model
         self.model.compile(optimizer=tf.optimizers.Adam(lr=args.learning_rate_baseline), loss='mse')
 
+    def compile(self):
+        self.model.compile(optimizer=tf.optimizers.Adam(lr=args.learning_rate_baseline), loss='mse')
+
     def train(self, states, returns):
         self.model.train_on_batch(x=states, y=returns)
 
@@ -85,6 +89,11 @@ class Network:
         self.model.compile(optimizer=tf.optimizers.Adam(lr=args.learning_rate), loss='categorical_crossentropy')  # mse
         if self.use_baseline:
             self.baseline_network = BaselineNetwork(shape=states_shape, classes=1, args=args)
+
+    def compile(self):
+        self.model.compile(optimizer=tf.optimizers.Adam(lr=args.learning_rate), loss='categorical_crossentropy')  # mse
+        if self.use_baseline:
+            self.baseline_network.compile()
 
     def deal_with_states(self, states):
         # [batch, 80, 80, 3] -> [batch,x,x,3]
@@ -161,7 +170,7 @@ def test(arg, environment, net_name, baseline_net_name):
 def main(env, args):
     network_name = "main_network"
     baseline_network_name = "baseline_network"
-    init_save_threshold = 300
+    init_save_threshold = 412.48
 
     # Fix random seeds and number of threads
     np.random.seed(args.seed)
@@ -175,6 +184,11 @@ def main(env, args):
     else:
         # Construct the network
         network = Network(env, args)
+        if args.finetune:
+            network.model = utils.load_model(network_name)
+            network.baseline_network.model = utils.load_model(baseline_network_name)
+            network.compile()
+
         network_saver = utils.Saver(init_save_threshold, network.model, network_name)
         baseline_network_saver = utils.Saver(init_save_threshold, network.baseline_network.model, baseline_network_name)
 
