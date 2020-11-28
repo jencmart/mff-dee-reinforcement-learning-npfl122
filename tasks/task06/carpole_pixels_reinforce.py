@@ -136,7 +136,7 @@ def test(arg, environment, net_name, baseline_net_name):
         state, done = environment.reset(start_evaluation=True), False
         while not done:
             state = np.array([state], np.float32)
-            state = deal_with_states(state, args)
+            state = deal_with_states(state, arg)
             probabilities = network.predict(state)[0]
             action = np.argmax(probabilities)
             state, reward, done, _ = environment.step(action)
