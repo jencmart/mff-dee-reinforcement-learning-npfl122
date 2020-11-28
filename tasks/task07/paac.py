@@ -1,60 +1,115 @@
 #!/usr/bin/env python3
 import argparse
 import os
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3") # Report only TF errors by default
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # Report only TF errors by default
 
 import gym
 import numpy as np
 import tensorflow as tf
-
+import zipfile
+import shutil
 import wrappers
 
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
 parser.add_argument("--recodex", default=False, action="store_true", help="Running in ReCodEx")
 parser.add_argument("--render_each", default=0, type=int, help="Render some episodes.")
-parser.add_argument("--seed", default=None, type=int, help="Random seed.")
-parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--seed", default=42, type=int, help="Random seed.")
+parser.add_argument("--threads", default=4, type=int, help="Maximum number of threads to use.")
 # For these and any other arguments you add, ReCodEx will keep your default value.
 parser.add_argument("--env", default="CartPole-v1", type=str, help="Environment.")
 parser.add_argument("--evaluate_each", default=100, type=int, help="Evaluate each number of batches.")
 parser.add_argument("--evaluate_for", default=10, type=int, help="Evaluate the given number of episodes.")
-parser.add_argument("--gamma", default=None, type=float, help="Discounting factor.")
-parser.add_argument("--hidden_layer_size", default=None, type=int, help="Size of hidden layer.")
+parser.add_argument("--gamma", default=0.99, type=float, help="Discounting factor.")
+parser.add_argument("--hidden_layer_size", default=256, type=int, help="Size of hidden layer.")
 parser.add_argument("--learning_rate", default=None, type=float, help="Learning rate.")
-parser.add_argument("--workers", default=None, type=int, help="Number of parallel workers.")
+parser.add_argument("--workers", default=10, type=int, help="Number of parallel workers.")
+
 
 class Network:
     def __init__(self, env, args):
         # TODO: Similarly to reinforce with baseline, define two models:
-        # - actor, which predicts distribution over the actions
-        # - critic, which predicts the value function
-        #
+        #  - actor, which predicts distribution over the actions
+        #  - critic, which predicts the value function
+
         # Use independent networks for both of them, each with
         # `args.hidden_layer_size` neurons in one ReLU hidden layer,
         # and train them using Adam with given `args.learning_rate`.
-        raise NotImplementedError()
+
+        # check : args.workers
+        input_layer = tf.keras.layers.Input(env.observation_space.shape[0])
+        print(f'Actor input shape is {input_layer.shape}')
+        hidden_layer = tf.keras.layers.Dense(args.hidden_layer_size, activation=tf.nn.relu)(input_layer)
+        output_layer = tf.keras.layers.Dense(env.action_space.n, activation=tf.nn.softmax)(hidden_layer)
+        self.actor = tf.keras.Model(input_layer, output_layer)
+        self.actor.compile(
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+            optimizer=tf.keras.optimizers.Adam(args.learning_rate),
+            run_eagerly=True
+        )
+        input_layer = tf.keras.layers.Input(env.observation_space.shape[0])
+        print(f'Critic input shape is {input_layer.shape}')
+        hidden_layer = tf.keras.layers.Dense(args.hidden_layer_size, activation=tf.nn.relu)(input_layer)
+        output_layer = tf.keras.layers.Dense(1)(hidden_layer)
+        self.critic = tf.keras.Model(input_layer, output_layer)
+        self.critic.compile(
+            optimizer=tf.keras.optimizers.Adam(args.learning_rate),
+            loss=tf.keras.losses.MeanSquaredError(),
+            run_eagerly=True
+        )
 
     # The `wrappers.typed_np_function` automatically converts input arguments
     # to NumPy arrays of given type, and converts the result to a NumPy array.
     @wrappers.typed_np_function(np.float32, np.int32, np.float32)
-    @tf.function
+    # @tf.function
     def train(self, states, actions, returns):
-        # TODO: Train the policy network using policy gradient theorem
-        # and the value network using MSE.
-        raise NotImplementedError()
+        states, actions, returns = np.array(states, np.float32), np.array(actions, np.int32), np.array(returns,
+                                                                                                       np.float32)
+        print(f'Sates shape is {states.shape},  actions shape is {actions.shape},  returns shape is {returns.shape} ... Sates shape is {tf.convert_to_tensor([states]).shape}')
+        print(f'Sates are {states},  actions are {actions},  returns are {returns}')
+        # TODO: Train the policy network using policy gradient theorem and the value network using MSE.
+        # self.critic.train_on_batch(states, returns)
+        self.critic.optimizer.minimize(
+            lambda: self.critic.loss(tf.convert_to_tensor([returns]), self.critic(states, training=True)),  # q_old, q_new
+            var_list=self.critic.trainable_variables
+        )
+        weights = returns - self.predict_values(states)
+        self.actor.train_on_batch(states, actions, sample_weight=weights)
 
     @wrappers.typed_np_function(np.float32)
-    @tf.function
+    # @tf.function
     def predict_actions(self, states):
-        # TODO: Return predicted action probabilities.
-        raise NotImplementedError()
+        return self.actor(states)
 
     @wrappers.typed_np_function(np.float32)
-    @tf.function
+    # @tf.function
     def predict_values(self, states):
         # TODO: Return estimates of value function.
-        raise NotImplementedError()
+        result = self.critic(tf.convert_to_tensor([states], dtype=np.float32))
+        return result[:, 0]
+
+
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            ziph.write(os.path.join(root, file))
+
+
+def save_model(network, name):
+    network.save(name, include_optimizer=False)
+    zipf = zipfile.ZipFile(f'{name}.zip', 'w', zipfile.ZIP_DEFLATED)
+    zipdir(f'{name}/', zipf)
+    zipf.close()
+    shutil.rmtree(name)
+
+
+def load_model(name):
+    with zipfile.ZipFile(name + ".zip", 'r') as zip_ref:
+        zip_ref.extractall("./")
+    return tf.keras.models.load_model(name)
+
 
 def main(env, args):
     # Fix random seeds and number of threads
@@ -73,32 +128,61 @@ def main(env, args):
                 env.render()
 
             # TODO: Predict the action using the greedy policy
-            action = None
+            # check the dimensions
+            actions = network.predict_actions(np.asarray([states]))[0]
+            action = np.argmax(actions)
             state, reward, done, _ = env.step(action)
             rewards += reward
         return rewards
 
     # Create the vectorized environment
     vector_env = gym.vector.AsyncVectorEnv([lambda: gym.make(env.spec.id)] * args.workers)
+    # states is a matrix ... states[i, :] is the dist of states of the worker i
     states = vector_env.reset()
-
-    training = True
+    best_so_far = 0
+    all_returns = []
+    training = not args.recodex
     while training:
         # Training
         for _ in range(args.evaluate_each):
             # TODO: Choose actions using network.predict_actions
-            actions = None
+            action_distributions = [network.predict_actions(np.asarray([state]))[0] for state in states]
+            actions = [np.random.choice(env.action_space.n, p=action_dist) for action_dist in action_distributions]
+            # compared to the actual paac alg here we perform only one action in each environment .. in the slides we
+            # performed a series of actions in each env
 
             # TODO: Perform steps in the vectorized environment
-
+            # each state is a vector of 4 numbers ... new_states is a matrix where each row is the quadruple of numbers
+            # that describes the given state and we have as many rows as workers (as the environments)
+            new_states, rewards, dones, _ = vector_env.step(actions)
             # TODO: Compute estimates of returns by one-step bootstrapping
+            # episode returns are estimated as r + gamma * network.predict_values(...)
+            episode_returns = np.zeros(len(new_states))
+
+            for r, ns, d, i in zip(rewards, new_states, dones, range(len(new_states))):
+                episode_returns[i] = r
+                if not d:
+                    episode_returns[i] += args.gamma * network.predict_values(ns)[0]
 
             # TODO: Train network using current states, chosen actions and estimated returns
+            for ret, s, a in zip(episode_returns, states, actions):
+                network.train(s, a, ret)
+
+            # need to make new states the old one
+            states = new_states
 
         # Periodic evaluation
         for _ in range(args.evaluate_for):
             evaluate_episode()
 
+        if len(all_returns) > 100 and np.average(all_returns[-50:]) > best_so_far:
+            best_so_far = np.average(all_returns[-50:])
+            print("Best so far: {}".format(best_so_far))
+            save_model(network.actor, "actor_model")
+            save_model(network.critic, "critic_model")
+
+    network.actor = load_model('actor_model')
+    network.critic = load_model('critic_model')
     # Final evaluation
     while True:
         evaluate_episode(start_evaluation=True)
