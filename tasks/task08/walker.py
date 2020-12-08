@@ -80,10 +80,12 @@ class Network:
 
     def compile(self):
         self.policy_actor.compile(optimizer=tf.keras.optimizers.Adam(args.learning_rate), )
+
         self.q1_critic.compile(
             optimizer=tf.keras.optimizers.Adam(self.lr),
             loss=tf.keras.losses.MeanSquaredError(),
         )
+
         self.q2_critic.compile(
             optimizer=tf.keras.optimizers.Adam(self.lr),
             loss=tf.keras.losses.MeanSquaredError(),
@@ -115,16 +117,31 @@ class Network:
     @wrappers.typed_np_function(np.float32, np.float32, np.float32)
     @tf.function
     def train_critic_Q(self, states, actions, returns):
-        self.q1_critic.optimizer.minimize(
-            lambda: self.q1_critic.loss(returns, self.q1_critic([states, actions], training=True)),  # q_old, q_new
-            var_list=self.q1_critic.trainable_variables
-        )
+        with tf.GradientTape() as tape:
+            # predict
+            critic1_values = self.q1_critic([states, actions], training=True)
+            loss1 = tf.reduce_mean(tf.math.square(returns - critic1_values))
+        q1_grad = tape.gradient(loss1, self.q1_critic.trainable_variables)
+        self.q1_critic.optimizer.apply_gradients(zip(q1_grad, self.q1_critic.trainable_variables))
 
-        # TODO TD3 - train Q2
-        self.q2_critic.optimizer.minimize(
-            lambda: self.q2_critic.loss(returns, self.q2_critic([states, actions], training=True)),  # q_old, q_new
-            var_list=self.q2_critic.trainable_variables
-        )
+        with tf.GradientTape() as tape:
+            critic2_values = self.q2_critic([states, actions], training=True)
+            loss2 = tf.reduce_mean(tf.math.square(returns - critic2_values))
+        q2_grad = tape.gradient(loss2, self.q2_critic.trainable_variables)
+        self.q2_critic.optimizer.apply_gradients(zip(q2_grad, self.q2_critic.trainable_variables))
+
+        return loss1, loss2
+
+        # self.q1_critic.optimizer.minimize(
+        #     lambda: self.q1_critic.loss(returns, self.q1_critic([states, actions], training=True)),  # q_old, q_new
+        #     var_list=self.q1_critic.trainable_variables
+        # )
+        #
+        # # TODO TD3 - train Q2
+        # self.q2_critic.optimizer.minimize(
+        #     lambda: self.q2_critic.loss(returns, self.q2_critic([states, actions], training=True)),  # q_old, q_new
+        #     var_list=self.q2_critic.trainable_variables
+        # )
 
     @wrappers.typed_np_function(np.float32)
     @tf.function
@@ -137,6 +154,8 @@ class Network:
 
         actor_grad = tape.gradient(actor_loss, self.policy_actor.trainable_variables)
         self.policy_actor.optimizer.apply_gradients(zip(actor_grad, self.policy_actor.trainable_variables))
+        return actor_loss
+
 
     @tf.function
     def polyak_target_update(self):
@@ -180,16 +199,17 @@ class Network:
             returns = rewards + ((1 - dones) * args.gamma * target_Q)
 
             # train ciric 1 and critic 2
-            self.train_critic_Q(states, actions, returns)
+            q1_loss, q2_loss = self.train_critic_Q(states, actions, returns)
 
             # TODO TD3: Delayed Updates
             if kk % args.target_delay == 0:
 
                 # update critic
-                self.train_actor(states)
+                actor_loss = self.train_actor(states)
 
                 # update polyak target_q1, target_q2, target_critic
                 self.polyak_target_update()
+        return actor_loss, q1_loss, q2_loss
 
 def zipdir(path, ziph):
     # ziph is zipfile handle
@@ -261,12 +281,18 @@ def main(env, args):
         network.compile()
     except:
         pass
+    ep = 0
     while training:
         # Training
         for E in range(args.evaluate_each):
             state, done = env.reset(), False
+            er_ret = 0
+            ep += 1
             MAX_ = 2000
             K=0
+            actor_losses = []
+            q1_losses = []
+            q2_losses = []
             for K in range(MAX_):
                 if E % 100 == 0:
                     env.render()
@@ -277,14 +303,20 @@ def main(env, args):
                 action = np.clip(action, -1*max_action, max_action)
 
                 next_state, reward, done, _ = env.step(action)
+                if reward > -100:
+                    er_ret += reward
                 replay_buffer.append(Transition(state, action, reward, done, next_state))
                 state = next_state
 
                 if (done or K+1 == MAX_) and len(replay_buffer) >= args.batch_size:
-                    network.train(replay_buffer, K)
+                    actor_loss, q1_loss, q2_loss = network.train(replay_buffer, K)
+                    actor_losses.append(actor_loss)
+                    q1_losses.append(q1_loss)
+                    q2_losses.append(q2_loss)
                 if done or K+1 == MAX_:
                     break
-
+            if len(actor_losses) > 0:
+                print('\rEpisode: {},\tDist.: {:.2f},\tactor_loss: {:.10f},\tc1_loss:{:.10f},\tc2_loss:{:.10f}' .format(ep, er_ret, np.mean(actor_losses), np.mean(q1_losses),np.mean(q2_losses), end=""))
         print("Periodic Evaluation ........................................")
         # Periodic evaluation
         for _ in range(args.evaluate_for):
@@ -292,7 +324,7 @@ def main(env, args):
             all_returns.append(r)
 
         avg = sum(all_returns[-20:])/20
-        print("Current mean {}-episode return: {}".format(args.evaluate_for, avg))
+        print("........ Current mean {}-episode return: {}".format(args.evaluate_for, avg))
         if avg > best_so_far:
             best_so_far = avg
             print("Best so far: {}".format(best_so_far))
