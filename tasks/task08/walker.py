@@ -27,16 +27,13 @@ parser.add_argument("--threads", default=4, type=int, help="Maximum number of th
 
 # For these and any other arguments you add, ReCodEx will keep your default value.
 parser.add_argument("--batch_size", default=100, type=int, help="Batch size.")  # try 64
-parser.add_argument("--evaluate_each", default=100, type=int, help="Evaluate each number of episodes.")
+parser.add_argument("--evaluate_each", default=500, type=int, help="Evaluate each number of episodes.")
 parser.add_argument("--evaluate_for", default=50, type=int, help="Evaluate the given number of episodes.")
 parser.add_argument("--gamma", default=0.99, type=float, help="Discounting factor.")
-
-parser.add_argument("--hidden_layer_size", default=128, type=int, help="Size of hidden layer.")
 parser.add_argument("--learning_rate", default=0.001, type=float, help="Learning rate.")
+
 parser.add_argument("--polyak", default=0.005, type=float, help="Polyak...")
 
-# parser.add_argument("--noise_sigma", default=0.2, type=float, help="UB noise sigma.")
-# parser.add_argument("--noise_theta", default=0.15, type=float, help="UB noise theta.")
 parser.add_argument("--explore_noise", default=0.1, type=float, help="Polyak...")
 
 parser.add_argument("--target_delay", default=2, type=int, help="delay target policy and target Q")
@@ -81,10 +78,22 @@ class Network:
         policy_actor.compile(optimizer=tf.keras.optimizers.Adam(args.learning_rate), )
         return policy_actor
 
+    def compile(self):
+        self.policy_actor.compile(optimizer=tf.keras.optimizers.Adam(args.learning_rate), )
+        self.q1_critic.compile(
+            optimizer=tf.keras.optimizers.Adam(self.lr),
+            loss=tf.keras.losses.MeanSquaredError(),
+        )
+        self.q2_critic.compile(
+            optimizer=tf.keras.optimizers.Adam(self.lr),
+            loss=tf.keras.losses.MeanSquaredError(),
+        )
+
+
     def __init__(self, env, args, state_dim, action_dim, max_action):
         self.polyak = args.polyak
         self.env = env
-
+        self.lr = args.learning_rate
         self.policy_actor = self.build_compile_actor(args, state_dim, action_dim, max_action)
         self.target_policy_actor = tf.keras.models.clone_model(self.policy_actor)
 
@@ -161,7 +170,26 @@ class Network:
         target_Q = tf.math.minimum(q1, q2)
         return target_Q
 
+    def train(self, replay_buffer, K):
+        for kk in range(K):
+            batch = np.random.choice(len(replay_buffer), size=args.batch_size, replace=False)
+            states, actions, rewards, dones, next_states = map(np.array, zip(*[replay_buffer[i] for i in batch]))
 
+            # calculate Q
+            target_Q = self.predict_values(np.asarray(next_states))
+            returns = rewards + ((1 - dones) * args.gamma * target_Q)
+
+            # train ciric 1 and critic 2
+            self.train_critic_Q(states, actions, returns)
+
+            # TODO TD3: Delayed Updates
+            if kk % args.target_delay == 0:
+
+                # update critic
+                self.train_actor(states)
+
+                # update polyak target_q1, target_q2, target_critic
+                self.polyak_target_update()
 
 def zipdir(path, ziph):
     # ziph is zipfile handle
@@ -184,6 +212,17 @@ def load_model(name):
     return tf.keras.models.load_model(name)
 
 
+def load_network(network):
+    # loading the models
+    network.policy_actor = load_model("actor_model")
+    network.q1_critic = load_model("critic_model")
+    network.q2_critic = load_model("critic_2_model")
+
+    network.target_policy_actor = load_model("target_actor_model")
+    network.target_q1_critic = load_model("target_critic_model")
+    network.target_q2_critic = load_model("target_critic_2_model")
+
+
 def main(env, args):
     # Fix random seeds and number of threads
     np.random.seed(args.seed)
@@ -194,12 +233,12 @@ def main(env, args):
     # Construct the network
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
-    max_action = env.action_space.high[0]
+    max_action = 1
     network = Network(env, args, state_dim, action_dim, max_action)
 
     # Replay memory; maxlen parameter can be passed to deque for a size limit,
     # which we however do not need in this simple task.
-    replay_buffer = collections.deque()
+    replay_buffer = collections.deque(maxlen=10000)
     Transition = collections.namedtuple("Transition", ["state", "action", "reward", "done", "next_state"])
 
     def evaluate_episode(start_evaluation=False):
@@ -216,16 +255,21 @@ def main(env, args):
 
     training = not args.recodex
     all_returns = []
-    best_so_far = - 99
-    i = 0
+    best_so_far = -30
+    try:
+        load_network(network)
+        network.compile()
+    except:
+        pass
     while training:
-
         # Training
-        for _ in range(args.evaluate_each):
+        for E in range(args.evaluate_each):
             state, done = env.reset(), False
-            # noise.reset()
             MAX_ = 2000
+            K=0
             for K in range(MAX_):
+                if E % 100 == 0:
+                    env.render()
                 # Select and add noise to action
                 single_state_batch = np.asarray([state])
                 action = network.predict_actions(single_state_batch)[0]
@@ -236,23 +280,12 @@ def main(env, args):
                 replay_buffer.append(Transition(state, action, reward, done, next_state))
                 state = next_state
 
+                if (done or K+1 == MAX_) and len(replay_buffer) >= args.batch_size:
+                    network.train(replay_buffer, K)
                 if done or K+1 == MAX_:
-                    if len(replay_buffer) >= args.batch_size:
-                        batch = np.random.choice(len(replay_buffer), size=args.batch_size, replace=False)
-                        states, actions, rewards, dones, next_states = map(np.array,
-                                                                           zip(*[replay_buffer[i] for i in batch]))
-
-                        target_Q = network.predict_values(np.asarray(next_states))
-                        returns = rewards + ((1 - dones) * args.gamma * target_Q)
-                        network.train_critic_Q(states, actions, returns)
-
-                        # TODO TD3: Delayed Updates
-                        i += 1
-                        if i % args.target_delay == 0:
-                            network.train_actor(states)
-                            network.polyak_target_update()
                     break
 
+        print("Periodic Evaluation ........................................")
         # Periodic evaluation
         for _ in range(args.evaluate_for):
             r = evaluate_episode()
@@ -271,15 +304,6 @@ def main(env, args):
             save_model(network.target_policy_actor, "target_actor_model")
             save_model(network.target_q1_critic, "target_critic_model")
             save_model(network.target_q2_critic, "target_critic_2_model")
-
-    # loading the models
-    network.policy_actor = load_model("actor_model")
-    network.q1_critic = load_model("critic_model")
-    network.q2_critic = load_model("critic_2_model")
-
-    network.target_policy_actor = load_model("target_actor_model")
-    network.target_q1_critic = load_model("target_critic_model")
-    network.target_q2_critic = load_model("target_critic_2_model")
 
     # Final evaluation
     while True:
