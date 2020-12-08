@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--recodex", default=False, action="store_true", help="Running in ReCodEx")
 parser.add_argument("--render_each", default=0, type=int, help="Render some episodes.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--threads", default=2, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--threads", default=4, type=int, help="Maximum number of threads to use.")
 
 # For these and any other arguments you add, ReCodEx will keep your default value.
 parser.add_argument("--batch_size", default=100, type=int, help="Batch size.")  # try 64
@@ -53,12 +53,6 @@ class Network:
         # input for state ... [batch, s] i.e. [64, 24]
         input_states = tf.keras.layers.Input(state_dim, name='critic_q_{}_input_states'.format(i))
 
-        # # Layer for a \in [-1, 1]^4
-        # hidden_layer_actions = tf.keras.layers.Dense(args.hidden_layer_size // 4, activation=tf.nn.relu, name='critic_q_{}_hidden1_action'.format(i))(input_actions)
-        #
-        # # Layer for s \in R^24
-        # hidden_layer = tf.keras.layers.Dense(args.hidden_layer_size // 4, activation=tf.nn.relu, name='critic_q_{}_hidden1_state'.format(i))(input_states)
-
         # Common hidden layers ...
         hidden_layer = tf.keras.layers.Concatenate(name='critic_q_{}_concatenation'.format(i))([input_states, input_actions])
         hidden_layer = tf.keras.layers.Dense(400, activation=tf.nn.relu, name='critic_q_{}_hidden1_common'.format(i))(hidden_layer)
@@ -71,7 +65,6 @@ class Network:
         q.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate),
             loss=tf.keras.losses.MeanSquaredError(),
-            # run_eagerly=True
         )
 
         return q
@@ -85,16 +78,12 @@ class Network:
 
         policy_actor = tf.keras.Model(input_layer, output_layer)
 
-        policy_actor.compile(optimizer=tf.keras.optimizers.Adam(args.learning_rate), )  # run_eagerly=True )
+        policy_actor.compile(optimizer=tf.keras.optimizers.Adam(args.learning_rate), )
         return policy_actor
 
-    def __init__(self, env, args):
+    def __init__(self, env, args, state_dim, action_dim, max_action):
         self.polyak = args.polyak
         self.env = env
-
-        state_dim = 24
-        action_dim = 4
-        max_action = 1
 
         self.policy_actor = self.build_compile_actor(args, state_dim, action_dim, max_action)
         self.target_policy_actor = tf.keras.models.clone_model(self.policy_actor)
@@ -156,7 +145,7 @@ class Network:
     @wrappers.typed_np_function(np.float32)
     @tf.function
     def predict_values(self, states):
-        predicted_actions = self.target_policy_actor(tf.convert_to_tensor(states))  # 1, Batch, state_space -> 1, 1, Batch, state_space
+        predicted_actions = self.target_policy_actor(tf.convert_to_tensor(states))
 
         # TODO TD3: smoothing of target policy
         noise = tf.random.normal(shape=tf.shape(predicted_actions), mean=0.0, stddev=self.policy_noise_sd, dtype=tf.float32)
@@ -219,7 +208,10 @@ def main(env, args):
     tf.config.threading.set_intra_op_parallelism_threads(args.threads)
 
     # Construct the network
-    network = Network(env, args)
+    state_dim = env.observation_space.shape[0]
+    action_dim = env.action_space.shape[0]
+    max_action = env.action_space.high[0]
+    network = Network(env, args, state_dim, action_dim, max_action)
 
     # Replay memory; maxlen parameter can be passed to deque for a size limit,
     # which we however do not need in this simple task.
@@ -238,12 +230,10 @@ def main(env, args):
             rewards += reward
         return rewards
 
-    # noise = OrnsteinUhlenbeckNoise(env.action_space.shape[0], 0, args.noise_theta, args.noise_sigma)
     training = not args.recodex
     all_returns = []
     best_so_far = - 99
     i = 0
-    max_action = env.action_space.high[0]
     while training:
 
         # Training
@@ -279,10 +269,11 @@ def main(env, args):
         for _ in range(args.evaluate_for):
             r = evaluate_episode()
             all_returns.append(r)
-            print("reward: {}".format(r))
 
-        if sum(all_returns[-20:])/20 > best_so_far:
-            best_so_far = sum(all_returns[-20:])/20
+        avg = sum(all_returns[-20:])/20
+        print("Current mean {}-episode return: {}".format(args.evaluate_for, avg))
+        if avg > best_so_far:
+            best_so_far = avg
             print("Best so far: {}".format(best_so_far))
 
             save_model(network.policy_actor, "actor_model")
