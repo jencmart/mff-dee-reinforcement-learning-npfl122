@@ -294,7 +294,7 @@ def main(env, args):
             q1_losses = []
             q2_losses = []
             for K in range(MAX_):
-                if E % 100 == 0:
+                if E % 50 == 0:
                     env.render()
                 # Select and add noise to action
                 single_state_batch = np.asarray([state])
