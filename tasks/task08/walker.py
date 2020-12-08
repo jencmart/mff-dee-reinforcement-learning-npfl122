@@ -162,22 +162,6 @@ class Network:
         return target_Q
 
 
-class OrnsteinUhlenbeckNoise:
-    """Ornstein-Uhlenbeck process."""
-
-    def __init__(self, shape, mu, theta, sigma):
-        self.mu = mu * np.ones(shape)
-        self.theta = theta
-        self.sigma = sigma
-        self.reset()
-
-    def reset(self):
-        self.state = np.copy(self.mu)
-
-    def sample(self):
-        self.state += self.theta * (self.mu - self.state) + np.random.normal(scale=self.sigma, size=self.state.shape)
-        return self.state
-
 
 def zipdir(path, ziph):
     # ziph is zipfile handle
@@ -240,7 +224,8 @@ def main(env, args):
         for _ in range(args.evaluate_each):
             state, done = env.reset(), False
             # noise.reset()
-            while not done:
+            MAX_ = 2000
+            for K in range(MAX_):
                 # Select and add noise to action
                 single_state_batch = np.asarray([state])
                 action = network.predict_actions(single_state_batch)[0]
@@ -251,19 +236,22 @@ def main(env, args):
                 replay_buffer.append(Transition(state, action, reward, done, next_state))
                 state = next_state
 
-                if len(replay_buffer) >= args.batch_size:
-                    batch = np.random.choice(len(replay_buffer), size=args.batch_size, replace=False)
-                    states, actions, rewards, dones, next_states = map(np.array, zip(*[replay_buffer[i] for i in batch]))
+                if done or K+1 == MAX_:
+                    if len(replay_buffer) >= args.batch_size:
+                        batch = np.random.choice(len(replay_buffer), size=args.batch_size, replace=False)
+                        states, actions, rewards, dones, next_states = map(np.array,
+                                                                           zip(*[replay_buffer[i] for i in batch]))
 
-                    target_Q = network.predict_values(np.asarray(next_states))
-                    returns = rewards + ((1 - dones) * args.gamma * target_Q)
-                    network.train_critic_Q(states, actions, returns)
+                        target_Q = network.predict_values(np.asarray(next_states))
+                        returns = rewards + ((1 - dones) * args.gamma * target_Q)
+                        network.train_critic_Q(states, actions, returns)
 
-                    # TODO TD3: Delayed Updates
-                    i += 1
-                    if i % args.target_delay == 0:
-                        network.train_actor(states)
-                        network.polyak_target_update()
+                        # TODO TD3: Delayed Updates
+                        i += 1
+                        if i % args.target_delay == 0:
+                            network.train_actor(states)
+                            network.polyak_target_update()
+                    break
 
         # Periodic evaluation
         for _ in range(args.evaluate_for):
