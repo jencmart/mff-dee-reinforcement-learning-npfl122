@@ -191,7 +191,7 @@ class Network:
         )
 
     def __init__(self, env, args, state_dim, action_dim, max_action):
-        self.tau_poliak = args.tau_poliak
+        self.tau_poliak = args.tau_poliak_critic
         self.env = env
         self.lr = args.learning_rate
         self.policy_actor = self.build_compile_actor(args, state_dim, action_dim, max_action)
